@@ -1,0 +1,126 @@
+176,179d175
+< 		float[] rankSum = new float[T.M];
+< 		for(int i = 0; i < T.M; i++) {					// .M is the rank dimension
+< 			rankSum[i]=0;
+< 		}
+210d205
+< 				rankSum[j]+=T.get(i,j);
+213,214c208
+<         if(lda_simplex)
+< 			writeSumRank(c, rankSum, index, iter, fs);
+---
+> 
+235,299d228
+< 
+< 
+< 	public void writeSumRank(char c, float[] rankSum, int index, int iter, FileSystem fs) throws IOException{
+< 			
+< 		String normalizerPath = outputPath + "/iter" + iter + "/" + c + "/" + c ;
+< 		String path = normalizerPath+"sum"+index+"."+taskId;
+< 		FSDataOutputStream out = fs.create(new Path(path));
+< 
+< 		System.out.println("Write to " + path);
+< 
+< 		for(int i=0;i<rank;i++){						// This would be trouble if rank doesnt math .M
+< 			out.writeFloat(rankSum[i]);
+< 		}
+< 	
+< 	}
+< 
+< 
+< 	public boolean normalizeFactor(DenseTensor M, String normalizerPath, FileSystem fs) throws IOException{
+< 		float rankSum[] = new float[M.M];
+< 		for(int i = 0; i < M.M; i++) {					// .M is the rank dimension
+< 			rankSum[i]=0;
+< 		}
+<         boolean flag = false;
+< 		for(int i=0; i<d; i++){
+< 			flag = false;
+< 			String path = normalizerPath+"sum"+i;
+< 			FileStatus[] allFiles = fs.globStatus(new Path(path + ".*"));		// Is it okay to take fs in a for loop
+< 			if(allFiles != null && allFiles.length > 0) {
+< 				for ( FileStatus f : allFiles ) { 
+< 
+< 					System.out.println("Update from " + f.getPath().toUri().getPath());
+< 					try {
+< 						//Path pt=new Path(path);
+< 						FSDataInputStream in = fs.open(f.getPath());
+< 						for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
+< 							rankSum[j]+=in.readFloat();
+< 						}
+< 						System.out.println("success on reading sum factors");
+< 						flag=true;
+< 						break;	// break the inner for loop
+< 						//return true && normalizationFlag;				// TODO: This might lead to hang scenarios?
+< 					} catch (EOFException e) {
+< 						//fs.close();
+< 						System.out.println("ERROR EOFException, continue");
+< 						//return false;
+< 						continue;
+< 					} catch (IOException e) {
+< 							System.out.println("ERROR reading factors");
+< 							continue;
+< 					} 
+< 				}
+< 			}
+<             if(!flag)
+< 				return flag;	//If it has failed in the task return false
+< 
+< 		}
+< 		for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
+< 			for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
+< 				float newVal = M.get(i,j)/rankSum[j];
+< 				M.set(i,j,newVal);
+< 			}
+< 		}
+< 		return true;
+< 	}
+< 	
+315,333c244,248
+< 			if(!lda_simplex){
+< 				String logfile = outputPath + "/log/" + c + index + "." + iter;
+< 				System.out.println("Check log: " + c + index + ", " + iter + ": " + logfile);
+< 				if(!checkForFile(logfile,fs)) {
+< 					fs.close();
+< 					return false;
+< 				}
+< 				System.out.println("Log file found");
+< 			}else{
+< 				for(int i=0; i<d; i++){
+< 					String logfile = outputPath + "/log/" + c + i + "." + iter;
+< 					System.out.println("Check log: " + c + i + ", " + iter + ": " + logfile);
+< 					if(!checkForFile(logfile,fs)) {
+< 						fs.close();
+< 						return false;
+< 					}
+< 					System.out.println("Log file found: Simplex case");
+< 
+< 				}
+---
+> 			String logfile = outputPath + "/log/" + c + index + "." + iter;
+> 			System.out.println("Check log: " + c + index + ", " + iter + ": " + logfile);
+> 			if(!checkForFile(logfile,fs)) {
+> 				fs.close();
+> 				return false;
+334a250
+> 			System.out.println("Log file found");
+339,340d254
+< 		
+< 		String normalizerPath = outputPath + "/iter" + iter + "/" + c + "/" + c ;
+345d258
+< 			normalizerPath = prevPath + "/" + c + "/" + c ;
+366,370c279
+< 					boolean normalizationFlag = true;
+<                     if(lda_simplex)
+< 						normalizationFlag=normalizeFactor(M, normalizerPath, fs);
+< 					if(!normalizationFlag)
+< 						System.out.println("Something is wrong in the sums");
+---
+> 
+373,375c282,283
+< 					if(normalizationFlag)
+< 						System.out.println("success on reading factors");
+< 					return (true && normalizationFlag);				// TODO: This might lead to hang scenarios?
+---
+> 					System.out.println("success on reading factors");
+> 					return true;
