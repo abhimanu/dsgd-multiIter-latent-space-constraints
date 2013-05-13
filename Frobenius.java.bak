@@ -42,7 +42,6 @@ public class Frobenius extends Configured implements Tool  {
 		String outputPath; 
 		String prevPath;
 		boolean KL = false;
-		boolean lda_simplex = true;
 
 		boolean debug = false;
 
@@ -55,7 +54,6 @@ public class Frobenius extends Configured implements Tool  {
 
 			KL = (job.getInt("dsgd.KL",0) == 1);
 
-			lda_simplex = (job.getInt("dsgd.lda_simplex",0) == 1);
 			if(job.getInt("dsgd.debug",0) == 1) {
 				debug = true;
 			}
@@ -133,16 +131,39 @@ public class Frobenius extends Configured implements Tool  {
 			}
 		}
 
-	public boolean normalizeFactor(DenseTensor M, String normalizerPath, FileSystem fs) throws IOException{
-		float rankSum[] = new float[M.M];
-		for(int i = 0; i < M.M; i++) {					// .M is the rank dimension
-			rankSum[i]=0;
-		}
-        boolean flag = false;
-		for(int i=0; i<d; i++){
-			flag = false;
-			String path = normalizerPath+"sum"+i;
-			FileStatus[] allFiles = fs.globStatus(new Path(path + ".*"));		// Is it okay to take fs in a for loop
+		public boolean updateFactor(DenseTensor M, char c, int index, int iter, int minI, final Reporter reporter) throws IOException {
+
+			System.out.println("Update " + c + index + ", iter " + iter + " (minI = " + minI + ")");
+
+			//if(debug) {
+			//return updateFactorDebug(M,c,index,iter,minI,reporter);
+			//}
+
+			//if(M.iter == iter) {
+				//return true;
+			//}
+
+			FileSystem fs = FileSystem.get(thisjob);
+
+			if(iter >= 0) {
+				System.out.println("Check log: " + c + index + ", " + iter);
+				String logfile = outputPath + "/log/" + c + index + "." + iter;
+				if(!checkForFile(logfile,fs)) {
+					fs.close();
+					return false;
+				}
+				System.out.println("Log file found");
+			}
+
+			M.reset();
+
+			String path = outputPath + "/iter" + iter + "/" + c + "/" + c + index;
+			if(iter < 0 && prevPath != "") {
+				path = prevPath + "/" + c + "/" + c + index;
+			}
+
+			FileStatus[] allFiles = fs.globStatus(new Path(path + ".*"));
+
 			if(allFiles != null && allFiles.length > 0) {
 				for ( FileStatus f : allFiles ) { 
 
@@ -150,144 +171,45 @@ public class Frobenius extends Configured implements Tool  {
 					try {
 						//Path pt=new Path(path);
 						FSDataInputStream in = fs.open(f.getPath());
-						Scanner s = new Scanner(in);
-						while(s.hasNext()) {					// .M is the rank dimension
-                            String key = s.next();
-							int j = s.nextInt();
-							float val = s.nextFloat();
-							rankSum[j]+=val;
+						if(debug) {
+							updateFactorDebug(in,M,c,minI);
+						} else {
+							for(int i = 0; i < M.N; i++) {
+								for(int j = 0; j < M.M; j++) {
+									M.set(i,j,in.readFloat());
+								}
+							}
 						}
-						System.out.println("success on reading sum factors");
-						flag=true;
-						break;	// break the inner for loop
-						//return true && normalizationFlag;				// TODO: This might lead to hang scenarios?
+
+						M.iter = iter;
+						fs.close();
+						System.out.println("success on reading factors");
+						return true;
 					} catch (EOFException e) {
 						//fs.close();
 						System.out.println("ERROR EOFException, continue");
 						//return false;
 						continue;
 					} catch (IOException e) {
+						if (iter < 0) {
 							System.out.println("ERROR reading factors");
 							continue;
+						} else {
+							System.out.println("ERROR reading factors, continue");
+							//fs.close();
+							//throw e;
+							continue;
+						}
 					} 
 				}
 			}
-            if(!flag)
-				return flag;	//If it has failed in the task return false
-
-		}
-		for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
-			for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
-				float newVal = M.get(i,j)*1.0f/rankSum[j];
-				M.set(i,j,newVal);
+			fs.close();
+			if(iter < 0) {
+				System.out.println("ERROR reading factors exiting true");
+				return false;
 			}
+			return false;
 		}
-		return true;
-	}
-	
-	public boolean updateFactor(DenseTensor M, char c, int index, int iter, int minI, final Reporter reporter) throws IOException {
-
-		System.out.println("Update " + c + index + ", iter " + iter + " (minI = " + minI + ")");
-
-		//if(debug) {
-			//return updateFactorDebug(M,c,index,iter,minI,reporter);
-		//}
-
-//		if(M.iter == iter) {
-//			return true;
-//		}
-
-		FileSystem fs = FileSystem.get(thisjob);
-
-		if(iter >= 0) {
-			if((!lda_simplex)||c=='U'){			// U 's simplex constrainit is different from V
-				String logfile = outputPath + "/log/" + c + index + "." + iter;
-				System.out.println("Check log: " + c + index + ", " + iter + ": " + logfile);
-				if(!checkForFile(logfile,fs)) {
-					fs.close();
-					return false;
-				}
-				System.out.println("Log file found");
-			}else{
-				for(int i=0; i<d; i++){
-					String logfile = outputPath + "/log/" + c + i + "." + iter;
-					System.out.println("Check log: " + c + i + ", " + iter + ": " + logfile);
-					if(!checkForFile(logfile,fs)) {
-						fs.close();
-						return false;
-					}
-					System.out.println("Log file found: Simplex case");
-
-				}
-			}
-
-		}
-
-		M.reset();
-		
-		String normalizerPath = outputPath + "/iter" + iter + "/" + c + "/" + c ;
-
-		String path = outputPath + "/iter" + iter + "/" + c + "/" + c + index;
-		if(iter < 0 && prevPath != "") {
-			path = prevPath + "/" + c + "/" + c + index;
-			normalizerPath = prevPath + "/" + c + "/" + c ;
-		}
-
-		FileStatus[] allFiles = fs.globStatus(new Path(path + ".*"));
-
-		if(allFiles != null && allFiles.length > 0) {
-			for ( FileStatus f : allFiles ) { 
-
-				System.out.println("Update from " + f.getPath().toUri().getPath());
-				try {
-					//Path pt=new Path(path);
-					FSDataInputStream in = fs.open(f.getPath());
-					if(debug) {
-						updateFactorDebug(in,M,c,minI);
-					} else {
-						for(int i = 0; i < M.N; i++) {
-							for(int j = 0; j < M.M; j++) {
-								M.set(i,j,in.readFloat());
-							}
-						}
-					}
-					boolean normalizationFlag = true;
-                    if(lda_simplex && c!='U')
-						normalizationFlag=normalizeFactor(M, normalizerPath, fs);
-					if(!normalizationFlag)
-						System.out.println("Something is wrong in the sums");
-					//M.iter = iter;
-					fs.close();
-					if(normalizationFlag){
-						M.iter = iter;
-						System.out.println("success on reading factors");
-					}
-					return normalizationFlag;//(true && normalizationFlag);				// TODO: This might lead to hang scenarios?
-				} catch (EOFException e) {
-					//fs.close();
-					System.out.println("ERROR EOFException, continue");
-					//return false;
-					continue;
-				} catch (IOException e) {
-					if (iter < 0) {
-						System.out.println("ERROR reading factors");
-						continue;
-					} else {
-						System.out.println("ERROR reading factors, continue");
-						//fs.close();
-						//throw e;
-						continue;
-					}
-				} 
-			}
-		}
-		fs.close();
-		if(iter < 0) {
-			System.out.println("ERROR reading factors exiting true");
-			return true;
-		}
-		return false;
-	}
 
 		public void reduce ( final IntArray key, final Iterator<FloatArray> values, final OutputCollector<NullWritable, NullWritable> output, final Reporter reporter) throws IOException { 
 
@@ -542,4 +464,3 @@ public class Frobenius extends Configured implements Tool  {
 	}
 
 }
-	

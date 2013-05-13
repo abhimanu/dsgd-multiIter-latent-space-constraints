@@ -27,7 +27,6 @@ echo -e "Key: $key\nLambda: $lambda\nMean: $mean\nSparse: $sparse\nNNMF: $nnmf\n
 hadoop fs -rmr /user/abhimank/$key/*
 hadoop fs -rmr /user/abhimank/.Trash
 rm ~/loss-$key.txt
-#rm ~/time-$key.txt
 
 params=" -D dsgd.regularizerLambda=$lambda -D dsgd.initMean=$mean -D dsgd.nnmf=$nnmf -D dsgd.sparse=$sparse -D dsgd.KL=$kl -D dsgd.N=$N -D dsgd.M0=$M0 -D dsgd.P0=$P0 -D dsgd.rank=$rank -D dsgd.debug=$debug -D dsgd.lda_simplex=$lda_simplex -D dsgd.no_wait=$no_wait -D mapred.reduce.tasks=$d $d 3 1 $key $dataset_path"
 

@@ -59,7 +59,7 @@ public class DSGD extends Configured implements Tool  {
 		for(int i = 0; i < iter; i++) {
 			System.out.println("Sub-iteration " + i);
 
-			JobConf conf = getJobInstance(i,isPaired);
+			JobConf conf = getJobInstance(jobName,isPaired);
 			FileSystem fs = FileSystem.get(conf);
 
 			conf.setInt("dsgd.d", d);
@@ -92,7 +92,7 @@ public class DSGD extends Configured implements Tool  {
 		}	
 
 		long endTime = System.currentTimeMillis() / 1000L;
-		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/home/abeutel/time" +"-" + args[3]+ ".txt",true)); ;
+		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/h/abhimank/time" +"-" + args[3]+ ".txt",true)); ;
 		timeResults.write(startTime + "\t" + endTime + "\t" + (endTime-startTime) + "\n");
 		timeResults.close();
 
@@ -109,7 +109,7 @@ public class DSGD extends Configured implements Tool  {
 
 	}
 
-	public JobConf getJobInstance(int sub, boolean isPaired) {
+	public JobConf getJobInstance(String sub, boolean isPaired) {
 		JobConf conf = new JobConf(getConf(), DSGD.class); 
 		conf.setJobName("DSGD-"+sub);
 
