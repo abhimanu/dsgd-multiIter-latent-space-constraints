@@ -829,7 +829,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 		System.out.println("Last batch: " + numSoFar);
 
-		writeFactor(U,'U',Ublock,curSubepoch,dN*Ublock,reporter);
+//		writeFactor(U,'U',Ublock,curSubepoch,dN*Ublock,reporter);		// this is a bug since when there are mising entries ina hole block we just write out to the last ending sub-epoch and move on. We should rather write in the 
+		writeFactor(U,'U',Ublock,d-1,dN*Ublock,reporter);		// Write it out to the last 'iter' or sub-epoch.
 
 		for(int set = 0; set < dataSets; set++) {
 
