@@ -17,6 +17,7 @@ import org.apache.hadoop.filecache.*;
 public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, FloatArray, NullWritable, NullWritable> {
 	DenseTensor U;
 	DenseTensor[] V;
+	DenseTensor Vseen;
 	DenseTensor[] W;
 
 	int rank;
@@ -114,8 +115,12 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			System.out.println("dataSet, M,P,dM,dP: " + i + ", " + M[i] + ", " + P[i] + ", " + dM[i] + ", "  + dP[i]);
 
 			V[i] = new DenseTensor(dM[i],rank);
+//			Vseen[i] = new DenseTensor(dM[i],1);
+//			Vseen[i].reset();
 			W[i] = new DenseTensor(dP[i],rank);
 		}
+		Vseen = new DenseTensor(dM[0],1);
+		Vseen.reset();
 
 		step_size = job.getFloat("dsgd.stepSize",0.000001f);
 		System.out.println("Step size: " + step_size);
@@ -196,6 +201,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		System.out.println("Write to " + fp);
 		for(int i = 0; i < T.N; i++) {
 			for(int j = 0; j < T.M; j++) {
+				float valMat = T.get(i,j);
+				if(c=='V')
+					valMat=valMat*Vseen.get(i,0);
 				if(!debug) {
 					//if(sparse) {
 						//if(T.get(i,j) != 0) {
@@ -204,16 +212,16 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 							//out.writeFloat(T.get(i,j));
 						//}
 					//} else {
-						out.writeFloat(T.get(i,j));
+						out.writeFloat(valMat);
 						//}
 				} else {
 					//if(Double.isNaN(T.get(i,j))) {
 						//System.err.println("Error writing " + i + ", " + j + " - " + minI + ": " + T.get(i,j));
 					//}
-					String val = c + "" + index + "\t" + (i+minI) + "\t" + j + "\t" + T.get(i,j) + "\n";
+					String val = c + "" + index + "\t" + (i+minI) + "\t" + j + "\t" + valMat + "\n";
 					out.writeBytes(val);
 				}
-				rankSum[j]+=T.get(i,j);
+				rankSum[j]+=valMat;
 			}
 		}
         if(lda_simplex && c!='U')
@@ -475,8 +483,11 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 					setGradient(W[dataSet],k,r, coeff, U_i,V_j);
 				}
 			}
-			if(lda_simplex)
+			if(lda_simplex){
 				normalize_doc_topic(U,i);
+				if(dataSet==0)
+					Vseen.set(j,0,1);			// This means that this entry exists
+			}
 	}
 	
 	class LogPollingThread implements Runnable {
@@ -593,60 +604,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	}
 
 
+	public int updateThroughTheSubepochs(int curSubepoch, int subepoch, int bi, int Ublock,  LinkedList<FloatArray> queue, Reporter reporter) throws IOException{
 
-	public void reduce (
-		final IntArray key, 
-		final Iterator<FloatArray> values, 
-		final OutputCollector<NullWritable, NullWritable> output, 
-		final Reporter reporter
-	) throws IOException { 
-
-		System.out.println("Key: " + key.toString());
-		
-		int numSoFar = 0;
-		int curSubepoch = -99999;
-		//int ci = -99999;
-		//int cj = -99999;
-		//int ck = -99999;
-		int Ublock = -99999;
-		boolean first = true;
-
-		LinkedList<FloatArray> queue = new LinkedList<FloatArray>();
-
-		while(values.hasNext()) {	// run SGD for U
-
-			FloatArray v = values.next();
-
-			int i = (int)(v.ar[0]);
-			int j = (int)(v.ar[1]);
-			int dataSet = (int)v.ar[v.ar.length-2];
-			int subepoch = (int)v.ar[v.ar.length-1];
-
-
-			int k = 0;
-			float val = v.ar[2];
-			if(!is2D[dataSet]) {
-				k = (int)(v.ar[2]);
-				val = v.ar[3];
-			}
-
-			if(Float.isNaN(val) || Float.isInfinite(val) || Math.abs(val) > 10) { 
-				System.out.print("val NaN: ");
-				System.out.println(v.toString());
-			}
-
-
-			int bi = (int)Math.floor(1.0 * i / dN);
-			int bj = (int)Math.floor(1.0 * j / dM[dataSet]);
-			int bk = (int)Math.floor(1.0 * k / dP[dataSet]);
-
-			if(first) {
-				Ublock = bi;
-				first = false;
-			}
-
-			if (subepoch != curSubepoch) {
-				System.out.println("New subepoch: " + bi +", " + bj  +", " + bk + ": " + subepoch + " (" + numSoFar + ")");
+//				System.out.println("New subepoch: " + bi +", " + bj  +", " + bk + ": " + subepoch + " (" + numSoFar + ")");
 				
 				int tj = (bi + curSubepoch) % d;
 				int tk = (bi + (int)Math.floor(curSubepoch / d)) %d;
@@ -659,7 +619,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
                 // Abhi: Do extra work here
 
 				// write plogs.
-				if((curSubepoch >= 0) && (no_wait)){	// -ve curSubEpoch will have to read though but that read is not done via polling
+				if((curSubepoch >= 0) && (no_wait) && (!queue.isEmpty())){	// -ve curSubEpoch will have to read though but that read is not done via polling
 					// write our own Plogs first
 					for(int set = 0; set < dataSets; set++) {
 
@@ -767,12 +727,78 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 					}
 				}
 
+				if(queue.isEmpty())
+					reporter.incrCounter("DSGD", "Empty Blocks", 1);
+
 				curSubepoch = subepoch;
 				//ci = bi;
 				//cj = bj;
 				//ck = bk;
-				numSoFar = 0;
+				//numSoFar = 0;
 				queue.clear();
+				return curSubepoch;
+	
+	}
+
+	public void reduce (
+		final IntArray key, 
+		final Iterator<FloatArray> values, 
+		final OutputCollector<NullWritable, NullWritable> output, 
+		final Reporter reporter
+	) throws IOException { 
+
+		System.out.println("Key: " + key.toString());
+		
+		int numSoFar = 0;
+		int curSubepoch = -99999;
+		//int ci = -99999;
+		//int cj = -99999;
+		//int ck = -99999;
+		int Ublock = -99999;
+		boolean first = true;
+
+		LinkedList<FloatArray> queue = new LinkedList<FloatArray>();
+
+		while(values.hasNext()) {	// run SGD for U
+
+			FloatArray v = values.next();
+
+			int i = (int)(v.ar[0]);
+			int j = (int)(v.ar[1]);
+			int dataSet = (int)v.ar[v.ar.length-2];
+			int dataSubepoch = (int)v.ar[v.ar.length-1];
+
+
+			int k = 0;
+			float val = v.ar[2];
+			if(!is2D[dataSet]) {
+				k = (int)(v.ar[2]);
+				val = v.ar[3];
+			}
+
+			if(Float.isNaN(val) || Float.isInfinite(val) || Math.abs(val) > 10) { 
+				System.out.print("val NaN: ");
+				System.out.println(v.toString());
+			}
+
+
+			int bi = (int)Math.floor(1.0 * i / dN);
+			int bj = (int)Math.floor(1.0 * j / dM[dataSet]);
+			int bk = (int)Math.floor(1.0 * k / dP[dataSet]);
+
+			if(first) {
+				Ublock = bi;
+				first = false;
+			}
+			int subepoch = 0;
+//public int updateThroughTheSubepochs(int curSubepoch, int subepoch, int bi, int Ublock,  LinkedList<FloatArray> queue, Reporter reporter){
+			while (dataSubepoch != curSubepoch) {
+				if(dataSubepoch==0)
+					subepoch=0;
+				else
+					subepoch = curSubepoch+1;
+				curSubepoch = updateThroughTheSubepochs(curSubepoch, subepoch, bi, Ublock, queue, reporter);
+
 			}
 
 			numSoFar++;
@@ -823,14 +849,19 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			if(lda_simplex)
 				normalize_doc_topic(U,i);
             */
-			reporter.incrCounter("DSGD", "Number Processed", 1);
+			reporter.incrCounter("DSGD", "Nonempty Number Processed", 1);
 			reporter.incrCounter("Subepochs", "U" + Ublock, 1);
 		}
 
-		System.out.println("Last batch: " + numSoFar);
+		//System.out.println("Last batch: " + numSoFar);
+		System.out.println("Total datapoints: " + numSoFar);
 
-//		writeFactor(U,'U',Ublock,curSubepoch,dN*Ublock,reporter);		// this is a bug since when there are mising entries ina hole block we just write out to the last ending sub-epoch and move on. We should rather write in the 
-		writeFactor(U,'U',Ublock,d-1,dN*Ublock,reporter);		// Write it out to the last 'iter' or sub-epoch.
+		while(curSubepoch!=d-1){			// now update until the last block
+			// NOTE passing Ublock here.
+			curSubepoch = updateThroughTheSubepochs(curSubepoch, curSubepoch+1, Ublock, Ublock, queue, reporter);
+		}
+
+		writeFactor(U,'U',Ublock,curSubepoch,dN*Ublock,reporter);
 
 		for(int set = 0; set < dataSets; set++) {
 
