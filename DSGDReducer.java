@@ -55,6 +55,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	boolean lda_simplex = true;
 	boolean no_wait = true;
 	boolean dictionary = false;
+	boolean dictionary2 = false;
 
 	float initMean = 0;
 
@@ -79,6 +80,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		KL = (job.getInt("dsgd.KL",0) == 1);
 		shuffleList = (job.getInt("dsgd.shuffleList",0) == 1);
 		dictionary = (job.getInt("dsgd.dictionary",0) == 1);
+		dictionary2 = (job.getInt("dsgd.dictionary2",0) == 1);
 
 		lambda = job.getFloat("dsgd.regularizerLamda",10);
 		initMean = job.getFloat("dsgd.initMean",0);
@@ -230,7 +232,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				rankSum[j]+=valMat;
 			}
 		}
-        if(lda_simplex && c!='U')
+        if( (lda_simplex || dictionary2) && c!='U')
 			writeSumRank(c, rankSum, index, iter, fs);
 		writeLog(c,index,iter,fs);
 		fs.close();
@@ -319,10 +321,23 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				return flag;	//If it has failed in the task return false
 
 		}
-		for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
-			for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
-				float newVal = M.get(i,j)*1.0f/rankSum[j];
-				M.set(i,j,newVal);
+
+        if(dictionary2) {
+			for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
+				for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
+					if(rankSum[j] * rankSum[j] > 1.0f && rankSum[j] != 0) {
+						float newVal = M.get(i,j)*1.0f/rankSum[j];
+						M.set(i,j,newVal);
+					}
+				}
+			}
+
+		} else {
+			for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
+				for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
+					float newVal = M.get(i,j)*1.0f/rankSum[j];
+					M.set(i,j,newVal);
+				}
 			}
 		}
 		return true;
@@ -343,7 +358,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		FileSystem fs = FileSystem.get(thisjob);
 
 		if(iter >= 0) {
-			if((!lda_simplex)||c=='U'){			// U 's simplex constrainit is different from V
+			if((!lda_simplex && !dictionary2)||c=='U'){			// U 's simplex constrainit is different from V
 				String logfile = outputPath + "/log/" + c + index + "." + iter;
 				System.out.println("Check log: " + c + index + ", " + iter + ": " + logfile);
 				if(!checkForFile(logfile,fs)) {
@@ -396,7 +411,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 						}
 					}
 					boolean normalizationFlag = true;
-                    if(lda_simplex && c!='U')
+                    if( (lda_simplex || dictionary2) && c!='U')
 						normalizationFlag=normalizeFactor(M, normalizerPath, fs);
 					if(!normalizationFlag)
 						System.out.println("Something is wrong in the sums");
@@ -584,7 +599,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			try{
 			FileSystem fs = FileSystem.get(reducer.thisjob);
 			
-			if((!reducer.lda_simplex)){			// U 's simplex constrainit is different from V
+			if((!reducer.lda_simplex && !reducer.dictionary2)){			// U 's simplex constrainit is different from V
 				String logfile = reducer.outputPath + "/Plog/" + c + index + "." + iter;
 				System.out.println("Thread: Check log: " + c + index + ", " + iter + ": " + logfile);
 				if(!reducer.checkForFile(logfile,fs)) {         
@@ -948,13 +963,13 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			System.out.println(i + ", " + r + ", " + coeff + ": " + newVal);
 		}
 
-		if(sparse || (dictionary && matrix == 'V')) {
-			System.out.println("SPARSITY CONSTRAINT being validated");
+		if(sparse || (dictionary && matrix == 'V') || (dictionary2 && matrix == 'U')) {
+			//System.out.println("SPARSITY CONSTRAINT being validated");
 			newVal = softThreshold(newVal,lambda * step_size * stepMultiplierMultiIter);
 		}
 
-		if( (nonNegative || (dictionary && matrix == 'U') )&& newVal < 0) {
-			System.out.println("NON-NEGATIVITY CONSTRAINT being validated");
+		if( (nonNegative || (dictionary && matrix == 'U') || (dictionary2 && matrix == 'V') )&& newVal < 0) {
+			//System.out.println("NON-NEGATIVITY CONSTRAINT being validated");
 			newVal = 0f;
 		}
 
