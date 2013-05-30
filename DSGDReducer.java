@@ -54,6 +54,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	boolean KL = false;
 	boolean lda_simplex = true;
 	boolean no_wait = true;
+	boolean dictionary = false;
 
 	float initMean = 0;
 
@@ -77,6 +78,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		no_wait = (job.getInt("dsgd.no_wait",0) == 1);
 		KL = (job.getInt("dsgd.KL",0) == 1);
 		shuffleList = (job.getInt("dsgd.shuffleList",0) == 1);
+		dictionary = (job.getInt("dsgd.dictionary",0) == 1);
 
 		lambda = job.getFloat("dsgd.regularizerLamda",10);
 		initMean = job.getFloat("dsgd.initMean",0);
@@ -487,14 +489,15 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			reporter.progress();
 
 			for(int r=0;r<rank;r++){
-				setGradient(U,i,r, coeff, V_j,W_k);
-				setGradient(V[dataSet],j,r, coeff, U_i,W_k);
+				setGradient(U,i,r, coeff, V_j,W_k,'U');
+				setGradient(V[dataSet],j,r, coeff, U_i,W_k,'V');
 
 				if(!is2D[dataSet]) {
-					setGradient(W[dataSet],k,r, coeff, U_i,V_j);
+					setGradient(W[dataSet],k,r, coeff, U_i,V_j,'W');
 				}
 			}
-			if(lda_simplex){
+
+			if(lda_simplex || dictionary){
 				normalize_doc_topic(U,i);
 				if(dataSet==0)
 					Vseen.set(j,0,1);			// This means that this entry exists
@@ -826,6 +829,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			}
 			int subepoch = 0;
 //public int updateThroughTheSubepochs(int curSubepoch, int subepoch, int bi, int Ublock,  LinkedList<FloatArray> queue, Reporter reporter){
+//
 			while (dataSubepoch != curSubepoch) {
 				if(dataSubepoch==0)
 					subepoch=0;
@@ -930,7 +934,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	}
 
 	//private void setGradient(Matrix M, int i, int r, double coeff, ArrayList<Double> M1, ArrayList<Double> M2) {
-	private void setGradient(DenseTensor M, int i, int r, double coeff, float[] M1, float[] M2) {
+	private void setGradient(DenseTensor M, int i, int r, double coeff, float[] M1, float[] M2, char matrix) {
 		if(KL) {
 			setGradientKL(M, i, r, coeff, M1, M2);
 			return;
@@ -944,12 +948,12 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			System.out.println(i + ", " + r + ", " + coeff + ": " + newVal);
 		}
 
-		if(sparse) {
+		if(sparse || (dictionary && matrix == 'V')) {
 			System.out.println("SPARSITY CONSTRAINT being validated");
 			newVal = softThreshold(newVal,lambda * step_size * stepMultiplierMultiIter);
 		}
 
-		if(nonNegative && newVal < 0) {
+		if( (nonNegative || (dictionary && matrix == 'U') )&& newVal < 0) {
 			System.out.println("NON-NEGATIVITY CONSTRAINT being validated");
 			newVal = 0f;
 		}
