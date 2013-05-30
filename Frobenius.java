@@ -120,6 +120,7 @@ public class Frobenius extends Configured implements Tool  {
 
 		public void updateFactorDebug(FSDataInputStream in, DenseTensor M, char c, int minI) throws IOException {
 			Scanner s = new Scanner(in);
+			try{
 			while(s.hasNext()) {
 				String key = s.next();
 				int i = s.nextInt() - minI;
@@ -130,6 +131,10 @@ public class Frobenius extends Configured implements Tool  {
 				} else {
 					System.out.println("ERROR reading input.  Mismatch on factors.");
 				}
+			}
+			} catch(NoSuchElementException e){
+				System.out.println("Received NoSuchElementException due half written file, throwing up IOException");
+				throw new IOException(e.getMessage());
 			}
 		}
 
@@ -473,7 +478,8 @@ public class Frobenius extends Configured implements Tool  {
 
 			String key = "-" + args[3];
 
-			BufferedWriter lossResults = new BufferedWriter(new FileWriter("/h/abhimank/loss" + key + ".txt",true)); ;
+			//BufferedWriter lossResults = new BufferedWriter(new FileWriter("/h/abhimank/loss" + key + ".txt",true)); ;
+			BufferedWriter lossResults = new BufferedWriter(new FileWriter("/home/abeutel/loss" + key + ".txt",true)); ;
 			//BufferedWriter lossResults = new BufferedWriter(new FileWriter("~/loss" + key + ".txt",true)); ;
 			if(!isPaired) {
 				lossResults.write(i + "\t" + loss +"\t" + (loss*1.0f/long_multiplier) + "\t" + count + "\t" + updated + "\t" + ((loss*1.0f/long_multiplier)/count)+ "\t" + Math.sqrt( (loss*1.0f/long_multiplier)/count ) + "\n");

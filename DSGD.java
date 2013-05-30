@@ -92,7 +92,7 @@ public class DSGD extends Configured implements Tool  {
 		}	
 
 		long endTime = System.currentTimeMillis() / 1000L;
-		//BufferedWriter timeResults = new BufferedWriter(new FileWriter("/h/abhimank/time" +"-" + args[3]+ ".txt",true)); ;
+//		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/h/abhimank/time" +"-" + args[3]+ ".txt",true)); ;
 		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/home/abeutel/time" +"-" + args[3]+ ".txt",true)); ;
 		timeResults.write(startTime + "\t" + endTime + "\t" + (endTime-startTime) + "\n");
 		timeResults.close();

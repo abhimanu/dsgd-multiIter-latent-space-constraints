@@ -34,6 +34,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	boolean[] is2D;
 
 	double step_size = 0.000001;
+	double stepMultiplierMultiIter = 1.0;
+	double initStepMultiplierMultiIter = 0.5;
+	boolean shuffleList = false;
 	double[] weight;
 	int dataSets = 1;
 	JobConf thisjob;
@@ -73,6 +76,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		lda_simplex = (job.getInt("dsgd.lda_simplex",0) == 1);
 		no_wait = (job.getInt("dsgd.no_wait",0) == 1);
 		KL = (job.getInt("dsgd.KL",0) == 1);
+		shuffleList = (job.getInt("dsgd.shuffleList",0) == 1);
 
 		lambda = job.getFloat("dsgd.regularizerLamda",10);
 		initMean = job.getFloat("dsgd.initMean",0);
@@ -115,17 +119,17 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			System.out.println("dataSet, M,P,dM,dP: " + i + ", " + M[i] + ", " + P[i] + ", " + dM[i] + ", "  + dP[i]);
 
 			V[i] = new DenseTensor(dM[i],rank);
-//			Vseen[i] = new DenseTensor(dM[i],1);
-//			Vseen[i].reset();
 			W[i] = new DenseTensor(dP[i],rank);
 		}
 		Vseen = new DenseTensor(dM[0],1);
-		Vseen.reset();
+		Vseen.zero();
 
 		step_size = job.getFloat("dsgd.stepSize",0.000001f);
+		initStepMultiplierMultiIter = job.getFloat("dsgd.initStepMultiplierMultiIter",0.5f);
 		System.out.println("Step size: " + step_size);
 
 		taskId = getAttemptId(job);
+			System.out.println("sparse, lambda, nnmf, lda_simplex, shuffleList, initStepMultiplierMultiIter, no_wait, step_size: "+ sparse + ", " + lambda + ", " + nonNegative + ", " + lda_simplex + ", " + shuffleList + ", "  + initStepMultiplierMultiIter + ", "+ no_wait + ", " + step_size);
 	}
 
 	public static String getAttemptId(Configuration conf) { // throws IllegalArgumentException {
@@ -202,7 +206,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		for(int i = 0; i < T.N; i++) {
 			for(int j = 0; j < T.M; j++) {
 				float valMat = T.get(i,j);
-				if(c=='V')
+				if(c=='V' && lda_simplex)
 					valMat=valMat*Vseen.get(i,0);
 				if(!debug) {
 					//if(sparse) {
@@ -233,6 +237,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 	public void updateFactorDebug(FSDataInputStream in, DenseTensor M, char c, int minI) throws IOException {
 		Scanner s = new Scanner(in);
+		try{
 		while(s.hasNext()) {
 			String key = s.next();
 			int i = s.nextInt() - minI;
@@ -243,6 +248,10 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			} else {
 				System.out.println("ERROR reading input.  Mismatch on factors.");
 			}
+		}
+		}catch(NoSuchElementException e){
+			System.out.println("received NoSuchElementException, due to file half written, throwing up as IOException");
+			throw new IOException(e.getMessage());
 		}
 	}
 
@@ -265,6 +274,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 
 	public boolean normalizeFactor(DenseTensor M, String normalizerPath, FileSystem fs) throws IOException{
+		System.out.println("SIMPLEX CONSTRAINT normalizing factor.");
 		float rankSum[] = new float[M.M];
 		for(int i = 0; i < M.M; i++) {					// .M is the rank dimension
 			rankSum[i]=0;
@@ -340,6 +350,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				}
 				System.out.println("Log file found");
 			}else{
+				System.out.println("SIMPLEX CONSTRAINT case update factor.");
 				for(int i=0; i<d; i++){
 					String logfile = outputPath + "/log/" + c + i + "." + iter;
 					System.out.println("Check log: " + c + i + ", " + iter + ": " + logfile);
@@ -569,18 +580,36 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		public boolean checkPLog(char c, int index, int iter){
 			try{
 			FileSystem fs = FileSystem.get(reducer.thisjob);
-			String logfile = reducer.outputPath + "/Plog/" + c + index + "." + iter;
-			System.out.println("Thread: Check log: " + c + index + ", " + iter + ": " + logfile);
-			if(!reducer.checkForFile(logfile,fs)) {         
+			
+			if((!reducer.lda_simplex)){			// U 's simplex constrainit is different from V
+				String logfile = reducer.outputPath + "/Plog/" + c + index + "." + iter;
+				System.out.println("Thread: Check log: " + c + index + ", " + iter + ": " + logfile);
+				if(!reducer.checkForFile(logfile,fs)) {         
+					fs.close();
+					return false;
+				}
+				System.out.println("Thread: Log file found");
 				fs.close();
-				return false;
-			}
-			System.out.println("Thread: Log file found");
-			return true;
+				return true;
+			}else{
+				for(int i=0; i<d; i++){
+					String logfile = reducer.outputPath + "/Plog/" + c + index + "." + iter;
+					System.out.println("Thread: Check log: " + c + index + ", " + iter + ": " + logfile);
+					if(!reducer.checkForFile(logfile,fs)) {
+						fs.close();
+						return false;
+					}
+					System.out.println("Thread Log file found: Simplex case");
+
+				}
+				fs.close();
+				return true;
+			} 
 			} catch(IOException e){
 				System.out.println("Thread: got IOException in checkPLog");
 				return false;
 			}
+			
 		}
 	
 	}
@@ -621,6 +650,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				// write plogs.
 				if((curSubepoch >= 0) && (no_wait) && (!queue.isEmpty())){	// -ve curSubEpoch will have to read though but that read is not done via polling
 					// write our own Plogs first
+					System.out.println("For NO_WAIT case initializing the polling thread");
 					for(int set = 0; set < dataSets; set++) {
 
 						//if(!is2D[set] || tkNew == 0) {
@@ -645,16 +675,20 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 				// Doing extra updates till the pLogPoller is alive
 					int countExtraUpdates = 0;
+					stepMultiplierMultiIter=1.0;
 					while(pLogPoller.t.isAlive()){
-//						Collections.shuffle(queue);
+						if(shuffleList) Collections.shuffle(queue);
+						stepMultiplierMultiIter = stepMultiplierMultiIter*initStepMultiplierMultiIter;
 						for(FloatArray listVal: queue) {
 							if(!pLogPoller.t.isAlive())
 								break;
 							FloatArray valArray = listVal;
 							performUpdate(valArray, reporter);
 							countExtraUpdates++;
-						}  
+						}
+						System.out.println("stepMultiplierMultiIter: "+ stepMultiplierMultiIter);
 					}
+					System.out.println("Extra Updates in U"+ Ublock + ": "+countExtraUpdates);
 					reporter.incrCounter("Extra Updates", "U"+Ublock, countExtraUpdates);
 				}
 
@@ -902,8 +936,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			return;
 		}
 
-		//double newVal = M.get(i, r) - step_size * coeff * M1.get(r) * M2.get(r);
-		float newVal = (float)(M.get(i, r) - step_size * coeff * M1[r] * M2[r]);
+		//double newVal = M.get(i, r) - step_size * stepMultiplierMultiIter * coeff * M1.get(r) * M2.get(r);
+		float newVal = (float)(M.get(i, r) - step_size * stepMultiplierMultiIter * coeff * M1[r] * M2[r]);
 		
 		if(Float.isNaN(newVal) || Float.isInfinite(newVal)) { 
 			System.out.print("newVal NaN: ");
@@ -911,14 +945,16 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		}
 
 		if(sparse) {
-			newVal = softThreshold(newVal,lambda * step_size);
+			System.out.println("SPARSITY CONSTRAINT being validated");
+			newVal = softThreshold(newVal,lambda * step_size * stepMultiplierMultiIter);
 		}
 
 		if(nonNegative && newVal < 0) {
+			System.out.println("NON-NEGATIVITY CONSTRAINT being validated");
 			newVal = 0f;
 		}
 
-		//System.out.println("Change: " + (step_size * coeff * M1[r] * M2[r]));
+		//System.out.println("Change: " + (step_size * stepMultiplierMultiIter * coeff * M1[r] * M2[r]));
 		M.set(i, r, newVal);
 	}
 
@@ -934,7 +970,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 	float pertubation = 0.00001f;
 	private void setGradientKL(DenseTensor M, int i, int r, double coeff, float[] M1, float[] M2) {
-		float newVal = (float)(M.get(i,r) - step_size*coeff*M1[r]*M2[r]);
+		float newVal = (float)(M.get(i,r) - step_size*stepMultiplierMultiIter*coeff*M1[r]*M2[r]);
 		
 		if(Float.isNaN(newVal) || Float.isInfinite(newVal)) { 
 			System.out.print("newVal NaN: ");
