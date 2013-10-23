@@ -8,7 +8,7 @@ public class DenseTensor implements Tensor {
 	int N;
 	int M;
 	int P;
-	float[][][] data;
+	float[] data;
 	int iter;
 
 	public DenseTensor(int n, int m) {
@@ -19,9 +19,15 @@ public class DenseTensor implements Tensor {
 		N = n;
 		M = m;
 		P = p;
-		data = new float[N][M][P];
+		//data = new float[N][M][P];
+		data = new float[N*M*P];
 		iter = -1;
 		reset();
+	}
+
+	// TODO: ABHI CHECK THIS
+	private int getIndex(int i, int j, int k) { 
+		return (i * M + j) * P + k; 
 	}
 
 	public float get(int i, int j) {
@@ -30,7 +36,8 @@ public class DenseTensor implements Tensor {
 
 	public float get(int i, int j, int k) {
 		//if(i >= 0 && j >= 0 && k >= 0 && i < N && j < M && k < P)
-			return data[i][j][k];
+		//return data[i][j][k];
+		return data[getIndex(i,j,k)];
 		//System.out.println("ERROR (DenseTensor): out of bounds on:" + i + ", " + j + ", " + k);
 		//return -1; // Throw error?
 	}
@@ -41,34 +48,44 @@ public class DenseTensor implements Tensor {
 
 	public void set(int i, int j, int k,  float value) {
 		//if(i >= 0 && j >= 0 && k >= 0 && i < N && j < M && k < P)
-			data[i][j][k] = value;
+		//data[i][j][k] = value;
+		data[getIndex(i,j,k)] = value;
 			//else
 			//System.out.println("ERROR (DenseTensor): out of bounds on write " + i + "/" + N + ", " + j + "/" + M + ", " + k + "/" + P + ": " + value);
 		// else throw error?
 	}
 	public void zero() {
-		for(int i = 0; i < N; i++) {
-			for(int j = 0; j < M; j++) {
-				for(int k = 0; k < P; k++) {
-					data[i][j][k] = 0.0f;
-				}
-			}
+		for(int i = 0; i < N*M*P; i++) {
+			data[i] = 0.0f;
 		}
+		//for(int i = 0; i < N; i++) {
+			//for(int j = 0; j < M; j++) {
+				//for(int k = 0; k < P; k++) {
+					//data[i][j][k] = 0.0f;
+				//}
+			//}
+		//}
 	}
 
 	public void reset(float mean) {
 		Random r = new Random();
-
-		for(int i = 0; i < N; i++) {
-			for(int j = 0; j < M; j++) {
-				for(int k = 0; k < P; k++) {
-					data[i][j][k] = (float)(r.nextGaussian()/2.0f + mean);
-					if(Float.isNaN(data[i][j][k])) {
-						System.out.println("NaN Error on Reset");
-					}
-				}
+		for(int i = 0; i < N*M*P; i++) {
+			data[i] = (float)(r.nextGaussian()/2.0f + mean);
+			if(Float.isNaN(data[i])) {
+				System.out.println("NaN Error on Reset");
 			}
 		}
+
+		//for(int i = 0; i < N; i++) {
+			//for(int j = 0; j < M; j++) {
+				//for(int k = 0; k < P; k++) {
+					//data[i][j][k] = (float)(r.nextGaussian()/2.0f + mean);
+					//if(Float.isNaN(data[i][j][k])) {
+						//System.out.println("NaN Error on Reset");
+					//}
+				//}
+			//}
+		//}
 
 	}
 
