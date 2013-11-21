@@ -56,7 +56,8 @@ public class DSGD extends Configured implements Tool  {
 		String jobName = args[3];
 
 		iter = 1;
-		for(int i = 0; i < iter; i++) {
+		int i=0;
+//		for(int i = 0; i < iter; i++) {
 			System.out.println("Sub-iteration " + i);
 
 			JobConf conf = getJobInstance(jobName,isPaired);
@@ -89,12 +90,23 @@ public class DSGD extends Configured implements Tool  {
 
 			RunningJob job = JobClient.runJob(conf);
 
-		}	
+//		}	
+		long extraUpdate = job.getCounters().findCounter("Extra Updates", "U").getCounter();
+		double waitingTimeRead = job.getCounters().findCounter("DSGD", "Time Waiting Sync Read").getCounter()/1000.0;
+		double waitingTimeWrite = job.getCounters().findCounter("DSGD", "Time Waiting Sync Write").getCounter()/1000.0;
+		double waitingTimeExtraRead = job.getCounters().findCounter("DSGD", "Time Waiting Extra Sync Read").getCounter()/1000.0;
+		double waitingTimeNormalizationWrite = job.getCounters().findCounter("DSGD", "Time Waiting Normalization Write").getCounter()/1000.0;
+		double timeNormalization = job.getCounters().findCounter("DSGD", "Time Normalization").getCounter()/1000.0;
+		double timeDataUpdate = job.getCounters().findCounter("DSGD", "Time Data Update").getCounter()/1000.0;
+		double timeFactorUpdate = job.getCounters().findCounter("DSGD", "Time Waiting Update Factor").getCounter()/1000.0;
+		double timeExtraUpdate = job.getCounters().findCounter("DSGD", "Time Extra Update").getCounter()/1000.0;
+
+		double waitingTime = waitingTimeRead +  waitingTimeWrite;
 
 		long endTime = System.currentTimeMillis() / 1000L;
-//		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/h/abhimank/time" +"-" + args[3]+ ".txt",true)); ;
-		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/home/abeutel/time" +"-" + args[3]+ ".txt",true)); ;
-		timeResults.write(startTime + "\t" + endTime + "\t" + (endTime-startTime) + "\n");
+		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/h/abhimank/results-aistats/time" +"-" + args[3]+ ".txt",true)); ;
+//		BufferedWriter timeResults = new BufferedWriter(new FileWriter("/home/abeutel/time" +"-" + args[3]+ ".txt",true)); ;
+		timeResults.write(startTime + "\t" + endTime + "\t" + (endTime-startTime) + "\t" + extraUpdate + "\t" + waitingTime + "\t"+ waitingTimeRead + "\t" + waitingTimeExtraRead + "\t" + waitingTimeWrite + "\t" + waitingTimeNormalizationWrite + "\t" + timeNormalization + "\t" + timeDataUpdate + "\t" + timeFactorUpdate + "\t" + timeExtraUpdate + "\n");
 		timeResults.close();
 
 		return 0;
@@ -132,6 +144,8 @@ public class DSGD extends Configured implements Tool  {
 		conf.setOutputKeyClass(Text.class); 
 		conf.setOutputValueClass(Text.class);
 
+		conf.setInt("mapreduce.job.counters.max", 1000);
+		conf.setInt("mapreduce.job.counters.limit", 1000);
 		return conf;
 	}
 

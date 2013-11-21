@@ -35,7 +35,8 @@ hadoop fs -rmr /user/abhimank/.Trash
 #rm ~/time-$key.txt
 
 #params=" -D mapred.job.reduce.memory.mb=$mmem -D mapred.child.java.opts=$jvm -D dsgd.regularizerLambda=$lambda -D dsgd.initMean=$mean -D dsgd.nnmf=$nnmf -D dsgd.sparse=$sparse -D dsgd.KL=$kl -D dsgd.N=$N -D dsgd.M0=$M0 -D dsgd.P0=$P0 -D dsgd.rank=$rank -D dsgd.debug=$debug -D dsgd.lda_simplex=$lda_simplex -D dsgd.shuffleList=$shuffleList -D dsgd.initStepMultiplierMultiIter=$initStepMultiplierMultiIter -D dsgd.no_wait=$no_wait -D mapred.reduce.tasks=$d $d 3 1 $key $dataset_path"
-params=" -D dsgd.regularizerLamda=$lambda -D dsgd.initMean=$mean -D dsgd.nnmf=$nnmf -D dsgd.sparse=$sparse -D dsgd.KL=$kl -D dsgd.N=$N -D dsgd.M0=$M0 -D dsgd.P0=$P0 -D dsgd.rank=$rank -D dsgd.debug=$debug -D dsgd.lda_simplex=$lda_simplex -D dsgd.shuffleList=$shuffleList -D dsgd.initStepMultiplierMultiIter=$initStepMultiplierMultiIter -D dsgd.no_wait=$no_wait -D mapred.reduce.tasks=$d $d 3 1 $key $dataset_path"
+
+params=" -D mapreduce.job.counters.limit=500 -D dsgd.initMean=$mean -D dsgd.nnmf=$nnmf -D dsgd.sparse=$sparse -D dsgd.KL=$kl -D dsgd.N=$N -D dsgd.M0=$M0 -D dsgd.P0=$P0 -D dsgd.rank=$rank -D dsgd.debug=$debug -D dsgd.lda_simplex=$lda_simplex -D dsgd.shuffleList=$shuffleList -D dsgd.initStepMultiplierMultiIter=$initStepMultiplierMultiIter -D dsgd.no_wait=$no_wait -D mapred.reduce.tasks=$d $d 3 1 $key $dataset_path"
 
 echo -e $params >>~/results-aistats/log-$key.txt
 
@@ -48,7 +49,7 @@ step=$initialStep
 time hadoop jar DSGD.jar DSGD -D dsgd.stepSize=$step $params ${output_dir}/run0
 
 last=0
-for i in {1..10}
+for i in {1..2}
 do
 
 #	step=$(echo "scale=10; $initialStep / (($i + 1) * 0.5)" | bc -l)
@@ -59,13 +60,14 @@ do
 	echo "Step ${step}"
 	time hadoop jar DSGD.jar DSGD -D dsgd.stepSize=$step $params ${output_dir}/run$i ${output_dir}/run${last}/iter${last_iter}
 
-	echo "Loss Iteration ${i}"
-	time hadoop jar Frobenius.jar Frobenius $params ${output_dir}-loss/run$i ${output_dir}/run${last}/iter${last_iter}
+#	echo "Loss Iteration ${i}"
+#	time hadoop jar Frobenius.jar Frobenius $params ${output_dir}-loss/run$i ${output_dir}/run${last}/iter${last_iter}
 
+hadoop fs -rmr /user/abhimank/dsgd-out/$key/run$last
 	last=$i
 done
-
 hadoop fs -rmr /user/abhimank/dsgd-out/$key/*
+
 
 #last=0
 #for i in {0..14}

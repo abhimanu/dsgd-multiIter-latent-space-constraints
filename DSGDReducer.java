@@ -52,10 +52,10 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	float lambda = 10;
 	boolean nonNegative = false;
 	boolean KL = false;
-	boolean lda_simplex = true;
+	boolean lda_simplex = false;
 	boolean no_wait = true;
+	boolean mmsb = false;
 	boolean dictionary = false;
-	boolean dictionary2 = false;
 
 	float initMean = 0;
 
@@ -76,11 +76,15 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		sparse = (job.getInt("dsgd.sparse",0) == 1);
 		nonNegative = (job.getInt("dsgd.nnmf",0) == 1);
 		lda_simplex = (job.getInt("dsgd.lda_simplex",0) == 1);
+		if(lda_simplex)
+			nonNegative=true;
 		no_wait = (job.getInt("dsgd.no_wait",0) == 1);
 		KL = (job.getInt("dsgd.KL",0) == 1);
 		shuffleList = (job.getInt("dsgd.shuffleList",0) == 1);
-		dictionary = (job.getInt("dsgd.dictionary",0) == 1);
-		dictionary2 = (job.getInt("dsgd.dictionary2",0) == 1);
+		mmsb = (job.getInt("dsgd.mmsb",0) == 1);
+		if(mmsb)
+			nonNegative=true;
+		dictionary = (job.getInt("dsgd.dict",0) == 1);
 
 		lambda = job.getFloat("dsgd.regularizerLamda",10);
 		initMean = job.getFloat("dsgd.initMean",0);
@@ -133,7 +137,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		System.out.println("Step size: " + step_size);
 
 		taskId = getAttemptId(job);
-			System.out.println("sparse, lambda, nnmf, lda_simplex, shuffleList, initStepMultiplierMultiIter, no_wait, step_size: "+ sparse + ", " + lambda + ", " + nonNegative + ", " + lda_simplex + ", " + shuffleList + ", "  + initStepMultiplierMultiIter + ", "+ no_wait + ", " + step_size);
+			System.out.println("sparse, lambda, nnmf, lda_simplex, mmsb, shuffleList, initStepMultiplierMultiIter, no_wait, step_size, dictionary: "+ sparse + ", " + lambda + ", " + nonNegative + ", " + lda_simplex + ", " + mmsb + ", " + shuffleList + ", "  + initStepMultiplierMultiIter + ", "+ no_wait + ", " + step_size + ", " + dictionary);
 	}
 
 	public static String getAttemptId(Configuration conf) { // throws IllegalArgumentException {
@@ -172,7 +176,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		return checkForFile(fp,fs);
 	}
 
-	public void writeLog(char c, int index, int iter, FileSystem fs) throws IOException {
+	public void writeLog(char c, int index, int iter, FileSystem fs, Reporter reporter) throws IOException {
+		long startTime = System.currentTimeMillis();
 		try {
 			String fp = outputPath + "/log";
 			Path path = new Path(fp);
@@ -186,10 +191,13 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				fs.createNewFile(path);
 			}
 		} catch (IOException e) { }
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Waiting Sync Write", endTime-startTime);
 	}
 
 	public void writeFactor(DenseTensor T, char c, int index, int iter, int minI, final Reporter reporter) throws IOException {
 
+		long startTime = System.currentTimeMillis();
 		//System.out.println("WRITE FACTOR: " + c + index + ", " + iter);
 		FileSystem fs = FileSystem.get(thisjob);
 		float[] rankSum = new float[T.M];
@@ -232,11 +240,13 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				rankSum[j]+=valMat;
 			}
 		}
-        if( (lda_simplex || dictionary2) && c!='U')
-			writeSumRank(c, rankSum, index, iter, fs);
-		writeLog(c,index,iter,fs);
+        if(lda_simplex && c!='U')
+			writeSumRank(c, rankSum, index, iter, fs, reporter);
+		writeLog(c,index,iter,fs, reporter);
 		fs.close();
 
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Waiting Sync Write", endTime-startTime);
 	}
 
 	public void updateFactorDebug(FSDataInputStream in, DenseTensor M, char c, int minI) throws IOException {
@@ -261,7 +271,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 
 
-	public void writeSumRank(char c, float[] rankSum, int index, int iter, FileSystem fs) throws IOException{
+	public void writeSumRank(char c, float[] rankSum, int index, int iter, FileSystem fs, Reporter reporter) throws IOException{
+		long startTime = System.currentTimeMillis();
+		System.out.println("SIMPLEX CONSTRAINT normalizing factor.");
 			
 		String normalizerPath = outputPath + "/iter" + iter + "/" + c + "/" + c ;
 		String path = normalizerPath+"sum"+index+"."+taskId;
@@ -273,11 +285,14 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			String val = c + "" + index + "\t" + i + "\t" + rankSum[i] + "\n";
 			out.writeBytes(val);
 		}
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Waiting Normalization Write", endTime-startTime);
 	
 	}
 
 
-	public boolean normalizeFactor(DenseTensor M, String normalizerPath, FileSystem fs) throws IOException{
+	public boolean normalizeFactor(DenseTensor M, String normalizerPath, FileSystem fs, Reporter reporter) throws IOException{
+		long startTime = System.currentTimeMillis();
 		System.out.println("SIMPLEX CONSTRAINT normalizing factor.");
 		float rankSum[] = new float[M.M];
 		for(int i = 0; i < M.M; i++) {					// .M is the rank dimension
@@ -321,29 +336,21 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				return flag;	//If it has failed in the task return false
 
 		}
-
-        if(dictionary2) {
-			for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
-				for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
-					if(rankSum[j] * rankSum[j] > 1.0f && rankSum[j] != 0) {
-						float newVal = M.get(i,j)*1.0f/rankSum[j];
-						M.set(i,j,newVal);
-					}
-				}
-			}
-
-		} else {
-			for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
-				for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
-					float newVal = M.get(i,j)*1.0f/rankSum[j];
-					M.set(i,j,newVal);
-				}
+		for(int j = 0; j < M.M; j++) {					// .M is the rank dimension
+			if(rankSum[j]<=0)
+				continue;
+			for(int i = 0; i < M.N; i++) {					// .M is the rank dimension
+				float newVal = M.get(i,j)*1.0f/rankSum[j];
+				M.set(i,j,newVal);
 			}
 		}
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Normalization", endTime-startTime);
 		return true;
 	}
 	
 	public boolean updateFactor(DenseTensor M, char c, int index, int iter, int minI, final Reporter reporter) throws IOException {
+		long startTime = System.currentTimeMillis();
 
 		System.out.println("Update " + c + index + ", iter " + iter + " (minI = " + minI + ")");
 
@@ -358,7 +365,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		FileSystem fs = FileSystem.get(thisjob);
 
 		if(iter >= 0) {
-			if((!lda_simplex && !dictionary2)||c=='U'){			// U 's simplex constrainit is different from V
+			if((!lda_simplex)||c=='U'){			// U 's simplex constrainit is different from V
 				String logfile = outputPath + "/log/" + c + index + "." + iter;
 				System.out.println("Check log: " + c + index + ", " + iter + ": " + logfile);
 				if(!checkForFile(logfile,fs)) {
@@ -411,8 +418,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 						}
 					}
 					boolean normalizationFlag = true;
-                    if( (lda_simplex || dictionary2) && c!='U')
-						normalizationFlag=normalizeFactor(M, normalizerPath, fs);
+                    if(lda_simplex && c!='U')
+						normalizationFlag=normalizeFactor(M, normalizerPath, fs, reporter);
 					if(!normalizationFlag)
 						System.out.println("Something is wrong in the sums");
 					//M.iter = iter;
@@ -445,11 +452,14 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			System.out.println("ERROR reading factors exiting true");
 			return true;
 		}
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Waiting Update Factor", endTime-startTime);
 		return false;
 	}
 
 
 	public void performUpdate(FloatArray v, Reporter reporter){
+			long startTime = System.currentTimeMillis();
 	
 			int i = (int)(v.ar[0]);
 			int j = (int)(v.ar[1]);
@@ -504,19 +514,29 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			reporter.progress();
 
 			for(int r=0;r<rank;r++){
-				setGradient(U,i,r, coeff, V_j,W_k,'U');
-				setGradient(V[dataSet],j,r, coeff, U_i,W_k,'V');
+//				setGradient(U,i,r, coeff, V_j,W_k);
+				if(dictionary)
+					setGradientSparse(U,i,r, coeff, V_j,W_k);
+				else
+					setGradient(U,i,r, coeff, V_j,W_k);
+				setGradient(V[dataSet],j,r, coeff, U_i,W_k);
 
 				if(!is2D[dataSet]) {
-					setGradient(W[dataSet],k,r, coeff, U_i,V_j,'W');
+					setGradient(W[dataSet],k,r, coeff, U_i,V_j);
 				}
 			}
-
-			if(lda_simplex || dictionary){
-				normalize_doc_topic(U,i);
+			if(dictionary){
+				l2_normalize_doc_topic(V[dataSet],j, reporter);	// V is our D^T
 				if(dataSet==0)
 					Vseen.set(j,0,1);			// This means that this entry exists
 			}
+			if(lda_simplex || mmsb){
+				normalize_doc_topic(U,i, reporter);
+				if(dataSet==0)
+					Vseen.set(j,0,1);			// This means that this entry exists
+			}
+			long endTime = System.currentTimeMillis();
+			reporter.incrCounter("DSGD", "Time Data Update", endTime-startTime);
 	}
 	
 	class LogPollingThread implements Runnable {
@@ -559,6 +579,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			// TODO: not doing simplex yet; i.e. synching over all reducers.
 			while (!doneUpdating) {
 
+				long startTime = System.currentTimeMillis();
 				boolean passed = true;
 				for(int set = 0; set < reducer.dataSets; set++) {
 
@@ -579,12 +600,15 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 						}
 					}
 					}
+				long endTime = System.currentTimeMillis();
+				reporter.incrCounter("DSGD", "Time Waiting Extra Sync Read", endTime-startTime);
 
 				doneUpdating = (curSubepoch < 0) || passed;			// curSubepoch < 0 is redundant here
 				if(!doneUpdating) {
 					System.out.println("Thread Waiting: "+waiting);
-					reporter.incrCounter("DSGD", "Time Waiting", 1);
-					reporter.incrCounter("Time waiting", "U" + Ublock, 1);
+//					reporter.incrCounter("DSGD", "Time Waiting", 1);
+//					reporter.incrCounter("Time waiting", "U" + Ublock, 1); throwing counter limimt
+//					reporter.incrCounter("Time waiting", "U" , 1);
 					//reporter.progress();
 					try{
 						Thread.sleep(3000);							// decrease the sleep time?
@@ -596,10 +620,11 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		}
 
 		public boolean checkPLog(char c, int index, int iter){
+//			long startTime = System.currentTimeMillis();
 			try{
 			FileSystem fs = FileSystem.get(reducer.thisjob);
 			
-			if((!reducer.lda_simplex && !reducer.dictionary2)){			// U 's simplex constrainit is different from V
+			if((!reducer.lda_simplex)){			// U 's simplex constrainit is different from V
 				String logfile = reducer.outputPath + "/Plog/" + c + index + "." + iter;
 				System.out.println("Thread: Check log: " + c + index + ", " + iter + ": " + logfile);
 				if(!reducer.checkForFile(logfile,fs)) {         
@@ -628,12 +653,15 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				return false;
 			}
 			
+//			long endTime = System.currentTimeMillis();
+//			reporter.incrCounter("DSGD", "Time Waiting Sync Read", endTime-startTime);
 		}
 	
 	}
 
 
 	public void writePLog(char c, int index, int iter, Reporter reporter) throws IOException {
+		long startTime = System.currentTimeMillis();
 		try {
 			FileSystem fs = FileSystem.get(thisjob);
 			String fp = outputPath + "/Plog";
@@ -648,6 +676,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				fs.createNewFile(path);
 			}
 		} catch (IOException e) { }
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Waiting Sync Write", endTime-startTime);
 	}
 
 
@@ -693,8 +723,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 				// Doing extra updates till the pLogPoller is alive
 					int countExtraUpdates = 0;
-					stepMultiplierMultiIter=1.0;
+					stepMultiplierMultiIter=initStepMultiplierMultiIter;
 					while(pLogPoller.t.isAlive()){
+						long startTime = System.currentTimeMillis();
 						if(shuffleList) Collections.shuffle(queue);
 						stepMultiplierMultiIter = stepMultiplierMultiIter*initStepMultiplierMultiIter;
 						for(FloatArray listVal: queue) {
@@ -705,9 +736,13 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 							countExtraUpdates++;
 						}
 						System.out.println("stepMultiplierMultiIter: "+ stepMultiplierMultiIter);
+						long endTime = System.currentTimeMillis();
+						reporter.incrCounter("DSGD", "Time Extra Update", endTime-startTime);
 					}
 					System.out.println("Extra Updates in U"+ Ublock + ": "+countExtraUpdates);
-					reporter.incrCounter("Extra Updates", "U"+Ublock, countExtraUpdates);
+//					reporter.incrCounter("Extra Updates", "U"+Ublock, countExtraUpdates);	throwing counter limit
+					reporter.incrCounter("Extra Updates", "U", countExtraUpdates);
+					stepMultiplierMultiIter=initStepMultiplierMultiIter;
 				}
 
 				// Now back to normal: synching reducers know that both are ready to write otu their factors.
@@ -766,10 +801,12 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 					}
 
 					doneUpdating = (curSubepoch < 0) || passed;
+					long startTime = System.currentTimeMillis();
 					if(!doneUpdating) {
 						System.out.println("Waiting: "+waiting);
 						reporter.incrCounter("DSGD", "Time Waiting", 1);
-						reporter.incrCounter("Time waiting", "U" + Ublock, 1);
+//						reporter.incrCounter("Time waiting", "U" + Ublock, 1);  throwing counter limit
+//						reporter.incrCounter("Time waiting", "U" , 1);
 						reporter.progress();
 						try{
 							Thread.sleep(3000);
@@ -777,10 +814,12 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 						reporter.progress();
 						waiting++;
 					}
+					long endTime = System.currentTimeMillis();
+					reporter.incrCounter("DSGD", "Time Waiting Sync Read", endTime-startTime);
 				}
 
-				if(queue.isEmpty())
-					reporter.incrCounter("DSGD", "Empty Blocks", 1);
+//				if(queue.isEmpty())
+//					reporter.incrCounter("DSGD", "Empty Blocks", 1);
 
 				curSubepoch = subepoch;
 				//ci = bi;
@@ -844,9 +883,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			}
 			int subepoch = 0;
 //public int updateThroughTheSubepochs(int curSubepoch, int subepoch, int bi, int Ublock,  LinkedList<FloatArray> queue, Reporter reporter){
-//
 			while (dataSubepoch != curSubepoch) {
-				if(dataSubepoch==0)
+//				if(dataSubepoch==0)
+				if(curSubepoch<0)
 					subepoch=0;
 				else
 					subepoch = curSubepoch+1;
@@ -902,8 +941,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			if(lda_simplex)
 				normalize_doc_topic(U,i);
             */
-			reporter.incrCounter("DSGD", "Nonempty Number Processed", 1);
-			reporter.incrCounter("Subepochs", "U" + Ublock, 1);
+//			reporter.incrCounter("DSGD", "Nonempty Number Processed", 1);
+//			reporter.incrCounter("Subepochs", "U" + Ublock, 1); thrwoing counter limit
+//			reporter.incrCounter("Subepochs", "U" , 1);
 		}
 
 		//System.out.println("Last batch: " + numSoFar);
@@ -934,8 +974,27 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 	}
 	
+    private void l2_normalize_doc_topic(DenseTensor T, int i, Reporter reporter){
+		long startTime = System.currentTimeMillis();
+		double sum = 0;
+		for(int r=0; r<rank; r++){
+			sum+=Math.pow(T.get(i,r),2);		
+		}
+		sum=Math.sqrt(sum);
+        if(sum<=1)	//dict learning constrainst on dict
+			return;
+		for(int r=0; r<rank; r++){
+			float val = T.get(i,r);
+			val = val*1.0f/((float)sum);
+			T.set(i,r,val);
+		}
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Normalization", endTime-startTime);
+	}
 
-    private void normalize_doc_topic(DenseTensor T, int i){
+
+    private void normalize_doc_topic(DenseTensor T, int i, Reporter reporter){
+		long startTime = System.currentTimeMillis();
 		float sum = 0;
 		for(int r=0; r<rank; r++){
 			sum+=T.get(i,r);		
@@ -946,10 +1005,11 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			float val = T.get(i,r);
 			T.set(i,r,val*1.0f/sum);
 		}
+		long endTime = System.currentTimeMillis();
+		reporter.incrCounter("DSGD", "Time Normalization", endTime-startTime);
 	}
 
-	//private void setGradient(Matrix M, int i, int r, double coeff, ArrayList<Double> M1, ArrayList<Double> M2) {
-	private void setGradient(DenseTensor M, int i, int r, double coeff, float[] M1, float[] M2, char matrix) {
+	private void setGradientSparse(DenseTensor M, int i, int r, double coeff, float[] M1, float[] M2) {
 		if(KL) {
 			setGradientKL(M, i, r, coeff, M1, M2);
 			return;
@@ -963,13 +1023,41 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			System.out.println(i + ", " + r + ", " + coeff + ": " + newVal);
 		}
 
-		if(sparse || (dictionary && matrix == 'V') || (dictionary2 && matrix == 'U')) {
-			//System.out.println("SPARSITY CONSTRAINT being validated");
+//		if(sparse) {
+//			System.out.println("SPARSITY CONSTRAINT being validated");
+		newVal = softThreshold(newVal,lambda * step_size * stepMultiplierMultiIter);
+//		}
+
+		if(nonNegative && newVal < 0) {
+//			System.out.println("NON-NEGATIVITY CONSTRAINT being validated");
+			newVal = 0f;
+		}
+
+		//System.out.println("Change: " + (step_size * stepMultiplierMultiIter * coeff * M1[r] * M2[r]));
+		M.set(i, r, newVal);
+	}
+	//private void setGradient(Matrix M, int i, int r, double coeff, ArrayList<Double> M1, ArrayList<Double> M2) {
+	private void setGradient(DenseTensor M, int i, int r, double coeff, float[] M1, float[] M2) {
+		if(KL) {
+			setGradientKL(M, i, r, coeff, M1, M2);
+			return;
+		}
+
+		//double newVal = M.get(i, r) - step_size * stepMultiplierMultiIter * coeff * M1.get(r) * M2.get(r);
+		float newVal = (float)(M.get(i, r) - step_size * stepMultiplierMultiIter * coeff * M1[r] * M2[r]);
+		
+		if(Float.isNaN(newVal) || Float.isInfinite(newVal)) { 
+			System.out.print("newVal NaN: ");
+			System.out.println(i + ", " + r + ", " + coeff + ": " + newVal);
+		}
+
+		if(sparse) {
+//			System.out.println("SPARSITY CONSTRAINT being validated");
 			newVal = softThreshold(newVal,lambda * step_size * stepMultiplierMultiIter);
 		}
 
-		if( (nonNegative || (dictionary && matrix == 'U') || (dictionary2 && matrix == 'V') )&& newVal < 0) {
-			//System.out.println("NON-NEGATIVITY CONSTRAINT being validated");
+		if(nonNegative && newVal < 0) {
+//			System.out.println("NON-NEGATIVITY CONSTRAINT being validated");
 			newVal = 0f;
 		}
 

@@ -478,8 +478,8 @@ public class Frobenius extends Configured implements Tool  {
 
 			String key = "-" + args[3];
 
-			//BufferedWriter lossResults = new BufferedWriter(new FileWriter("/h/abhimank/loss" + key + ".txt",true)); ;
-			BufferedWriter lossResults = new BufferedWriter(new FileWriter("/home/abeutel/loss" + key + ".txt",true)); ;
+			BufferedWriter lossResults = new BufferedWriter(new FileWriter("/h/abhimank/results-aistats/loss" + key + ".txt",true)); ;
+			//BufferedWriter lossResults = new BufferedWriter(new FileWriter("/home/abeutel/loss" + key + ".txt",true)); ;
 			//BufferedWriter lossResults = new BufferedWriter(new FileWriter("~/loss" + key + ".txt",true)); ;
 			if(!isPaired) {
 				lossResults.write(i + "\t" + loss +"\t" + (loss*1.0f/long_multiplier) + "\t" + count + "\t" + updated + "\t" + ((loss*1.0f/long_multiplier)/count)+ "\t" + Math.sqrt( (loss*1.0f/long_multiplier)/count ) + "\n");
@@ -529,6 +529,9 @@ public class Frobenius extends Configured implements Tool  {
 
 		conf.setOutputKeyClass(Text.class); 
 		conf.setOutputValueClass(Text.class);
+
+		conf.setInt("mapreduce.job.counters.max", 1000);
+		conf.setInt("mapreduce.job.counters.limit", 1000);
 
 		return conf;
 	}
