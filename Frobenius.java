@@ -460,7 +460,8 @@ public class Frobenius extends Configured implements Tool  {
 				MultipleInputs.addInputPath(conf, new Path(args[5]), KeyValueTextInputFormat.class, DSGDMapperPaired.class);
 				outputIndex = 6;
 			} else {
-				FileInputFormat.addInputPath(conf, new Path(args[4])); 
+//				FileInputFormat.addInputPath(conf, new Path(args[4])); 
+				FileInputFormat.addInputPaths(conf, args[4]); 
 				outputIndex = 5;
 			}
 			//FileOutputFormat.setOutputPath(conf, new Path(args[outputIndex] + "/final/"));
