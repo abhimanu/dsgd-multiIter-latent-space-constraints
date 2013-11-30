@@ -62,6 +62,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	String timeTracker = "";
 
 	public void configure(JobConf job) {
+
+		timeTracker += "Start: " +  System.currentTimeMillis() + "\n";
 		//System.out.println("TEST");
 
 		thisjob = job;
@@ -881,6 +883,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		final Reporter reporter
 	) throws IOException { 
 
+		timeTracker += "Start Reduce: " +  System.currentTimeMillis() + "\n";
 		System.out.println("Key: " + key.toString());
 		
 		int numSoFar = 0;
@@ -1024,6 +1027,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		}
 		timeTracker += "End final write of data: " + System.currentTimeMillis() + "\n";
 
+		timeTracker += "DONE: " +  System.currentTimeMillis() + "\n";
 
 		FileSystem fs = FileSystem.get(thisjob);
 		writeTimeLog(Ublock,fs,reporter,timeTracker);
