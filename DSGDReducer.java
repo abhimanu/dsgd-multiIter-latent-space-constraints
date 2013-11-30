@@ -390,6 +390,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		//}
 
 		if(M.iter == iter) {
+			timeTracker += "Time Update Factor (Read) End: " + System.currentTimeMillis() + "\n";
 			return true;
 		}
 
@@ -401,6 +402,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				System.out.println("Check log: " + c + index + ", " + iter + ": " + logfile);
 				if(!checkForFile(logfile,fs)) {
 					fs.close();
+					timeTracker += "Time Update Factor (Read) End: " + System.currentTimeMillis() + "\n";
 					return false;
 				}
 				System.out.println("Log file found");
@@ -411,6 +413,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 					System.out.println("Check log: " + c + i + ", " + iter + ": " + logfile);
 					if(!checkForFile(logfile,fs)) {
 						fs.close();
+						timeTracker += "Time Update Factor (Read) End: " + System.currentTimeMillis() + "\n";
 						return false;
 					}
 					System.out.println("Log file found: Simplex case");
