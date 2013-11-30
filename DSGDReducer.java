@@ -271,7 +271,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		fs.close();
 
 		long endTime = System.currentTimeMillis();
-		timeTracker += "Time Waiting Sync Write Log End: " + endTime + "\n";
+		timeTracker += "Time Waiting Sync Write  End: " + endTime + "\n";
 		reporter.incrCounter("DSGD", "Time Waiting Sync Write", endTime-startTime);
 	}
 
