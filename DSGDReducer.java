@@ -459,6 +459,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 						M.iter = iter;
 						System.out.println("success on reading factors");
 					}
+					timeTracker += "Time Update Factor (Read) End: " + System.currentTimeMillis() + "\n";
 					return normalizationFlag;//(true && normalizationFlag);				// TODO: This might lead to hang scenarios?
 				} catch (EOFException e) {
 					//fs.close();
@@ -479,12 +480,12 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			}
 		}
 		fs.close();
+		long endTime = System.currentTimeMillis();
+		timeTracker += "Time Update Factor (Read) End: " + endTime + "\n";
 		if(iter < 0) {
 			System.out.println("ERROR reading factors exiting true");
 			return true;
 		}
-		long endTime = System.currentTimeMillis();
-		timeTracker += "Time Update Factor (Read) End: " + endTime + "\n";
 		reporter.incrCounter("DSGD", "Time Waiting Update Factor", endTime-startTime);
 		return false;
 	}
