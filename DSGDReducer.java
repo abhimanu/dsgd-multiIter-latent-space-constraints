@@ -59,6 +59,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 	float initMean = 0;
 
+	String timeTracker = "";
+
 	public void configure(JobConf job) {
 		//System.out.println("TEST");
 
@@ -178,6 +180,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 	public void writeLog(char c, int index, int iter, FileSystem fs, Reporter reporter) throws IOException {
 		long startTime = System.currentTimeMillis();
+		timeTracker += "Time Waiting Sync Write Log Begin: " + startTime + "\n";
 		try {
 			String fp = outputPath + "/log";
 			Path path = new Path(fp);
@@ -192,12 +195,32 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			}
 		} catch (IOException e) { }
 		long endTime = System.currentTimeMillis();
-		reporter.incrCounter("DSGD", "Time Waiting Sync Write", endTime-startTime);
+		timeTracker += "Time Waiting Sync Write Log End: " + endTime + "\n";
+		reporter.incrCounter("DSGD", "Time Waiting Sync Log Write", endTime-startTime);
+	}
+
+	public void writeTimeLog(int index, FileSystem fs, Reporter reporter, String msg) throws IOException {
+		try {
+			String fp = outputPath + "/timelog";
+			Path path = new Path(fp);
+			if (!fs.exists(path)) {
+				fs.mkdirs(path);
+			}
+
+			fp += "/" + index + "." + taskId;
+			FSDataOutputStream out = fs.create(new Path(fp));
+			out.writeBytes(msg);
+
+			if (!fs.exists(path)) {
+				fs.createNewFile(path);
+			}
+		} catch (IOException e) { }
 	}
 
 	public void writeFactor(DenseTensor T, char c, int index, int iter, int minI, final Reporter reporter) throws IOException {
 
 		long startTime = System.currentTimeMillis();
+		timeTracker += "Time Waiting Sync Write Begin: " + startTime + "\n";
 		//System.out.println("WRITE FACTOR: " + c + index + ", " + iter);
 		FileSystem fs = FileSystem.get(thisjob);
 		float[] rankSum = new float[T.M];
@@ -246,6 +269,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		fs.close();
 
 		long endTime = System.currentTimeMillis();
+		timeTracker += "Time Waiting Sync Write Log End: " + endTime + "\n";
 		reporter.incrCounter("DSGD", "Time Waiting Sync Write", endTime-startTime);
 	}
 
@@ -273,6 +297,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 	public void writeSumRank(char c, float[] rankSum, int index, int iter, FileSystem fs, Reporter reporter) throws IOException{
 		long startTime = System.currentTimeMillis();
+		timeTracker += "Time Waiting Normalization Write Begin: " + startTime + "\n";
 		System.out.println("SIMPLEX CONSTRAINT normalizing factor.");
 			
 		String normalizerPath = outputPath + "/iter" + iter + "/" + c + "/" + c ;
@@ -286,6 +311,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			out.writeBytes(val);
 		}
 		long endTime = System.currentTimeMillis();
+		timeTracker += "Time Waiting Normalization Write End: " + endTime + "\n";
 		reporter.incrCounter("DSGD", "Time Waiting Normalization Write", endTime-startTime);
 	
 	}
@@ -293,6 +319,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 	public boolean normalizeFactor(DenseTensor M, String normalizerPath, FileSystem fs, Reporter reporter) throws IOException{
 		long startTime = System.currentTimeMillis();
+		timeTracker += "Time Normalization Begin: " + startTime + "\n";
 		System.out.println("SIMPLEX CONSTRAINT normalizing factor.");
 		float rankSum[] = new float[M.M];
 		for(int i = 0; i < M.M; i++) {					// .M is the rank dimension
@@ -345,12 +372,14 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			}
 		}
 		long endTime = System.currentTimeMillis();
+		timeTracker += "Time Normalization End: " + endTime + "\n";
 		reporter.incrCounter("DSGD", "Time Normalization", endTime-startTime);
 		return true;
 	}
 	
 	public boolean updateFactor(DenseTensor M, char c, int index, int iter, int minI, final Reporter reporter) throws IOException {
 		long startTime = System.currentTimeMillis();
+		timeTracker += "Time Update Factor (Read) Begin: " + startTime + "\n";
 
 		System.out.println("Update " + c + index + ", iter " + iter + " (minI = " + minI + ")");
 
@@ -453,6 +482,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 			return true;
 		}
 		long endTime = System.currentTimeMillis();
+		timeTracker += "Time Update Factor (Read) End: " + endTime + "\n";
 		reporter.incrCounter("DSGD", "Time Waiting Update Factor", endTime-startTime);
 		return false;
 	}
@@ -697,6 +727,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 
 				// write plogs.
 				if((curSubepoch >= 0) && (no_wait) && (!queue.isEmpty())){	// -ve curSubEpoch will have to read though but that read is not done via polling
+					timeTracker += "Begin writing PLog: " + System.currentTimeMillis() + "\n";
 					// write our own Plogs first
 					System.out.println("For NO_WAIT case initializing the polling thread");
 					for(int set = 0; set < dataSets; set++) {
@@ -718,9 +749,13 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 							}
 						}
 					}
+					timeTracker += "End writing PLog: " + System.currentTimeMillis() + "\n";
+
 					// intialize and run thread
 				    LogPollingThread pLogPoller = new LogPollingThread(jobName+"-pLogPoller_"+taskId, tj, tjNew, tk, tkNew, subepoch, curSubepoch, Ublock, reporter, this);
 
+					long startTime0 = System.currentTimeMillis();
+					timeTracker += "Time Doing Extra Updates Begin: " + startTime0 + "\n";
 				// Doing extra updates till the pLogPoller is alive
 					int countExtraUpdates = 0;
 					stepMultiplierMultiIter=initStepMultiplierMultiIter;
@@ -743,7 +778,13 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 //					reporter.incrCounter("Extra Updates", "U"+Ublock, countExtraUpdates);	throwing counter limit
 					reporter.incrCounter("Extra Updates", "U", countExtraUpdates);
 					stepMultiplierMultiIter=initStepMultiplierMultiIter;
+					long endTime0 = System.currentTimeMillis();
+					timeTracker += "Time Doing Extra Updates End: " + endTime0 + "\n";
 				}
+
+
+				long startTime1  = System.currentTimeMillis();
+				timeTracker += "Time Updating All Factors Begin: " + startTime1 + "\n";
 
 				// Now back to normal: synching reducers know that both are ready to write otu their factors.
 				if(subepoch == 0) {  // First iteration, possibly get stuff from past run and must load U
@@ -817,6 +858,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 					long endTime = System.currentTimeMillis();
 					reporter.incrCounter("DSGD", "Time Waiting Sync Read", endTime-startTime);
 				}
+				long endTime1= System.currentTimeMillis();
+				timeTracker += "Time Updating All Factors End: " + endTime1 + "\n";
 
 //				if(queue.isEmpty())
 //					reporter.incrCounter("DSGD", "Empty Blocks", 1);
@@ -882,6 +925,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				first = false;
 			}
 			int subepoch = 0;
+			if (dataSubepoch != curSubepoch) {
+				timeTracker += "End first pass of block: " + System.currentTimeMillis() + "\n";
+			}
 //public int updateThroughTheSubepochs(int curSubepoch, int subepoch, int bi, int Ublock,  LinkedList<FloatArray> queue, Reporter reporter){
 			while (dataSubepoch != curSubepoch) {
 //				if(dataSubepoch==0)
@@ -891,6 +937,9 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 					subepoch = curSubepoch+1;
 				curSubepoch = updateThroughTheSubepochs(curSubepoch, subepoch, bi, Ublock, queue, reporter);
 
+				if (dataSubepoch == curSubepoch) {
+					timeTracker += "Start first pass of block: " + System.currentTimeMillis() + "\n";
+				}
 			}
 
 			numSoFar++;
@@ -949,6 +998,8 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 		//System.out.println("Last batch: " + numSoFar);
 		System.out.println("Total datapoints: " + numSoFar);
 
+
+		timeTracker += "Begin final write of data: " + System.currentTimeMillis() + "\n";
 		while(curSubepoch!=d-1){			// now update until the last block
 			// NOTE passing Ublock here.
 			curSubepoch = updateThroughTheSubepochs(curSubepoch, curSubepoch+1, Ublock, Ublock, queue, reporter);
@@ -971,6 +1022,11 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				writeFactor(W[set],wc,tk,curSubepoch,dP[set]*tk,reporter);
 			}
 		}
+		timeTracker += "End final write of data: " + System.currentTimeMillis() + "\n";
+
+
+		FileSystem fs = FileSystem.get(thisjob);
+		writeTimeLog(Ublock,fs,reporter,timeTracker);
 
 	}
 	
