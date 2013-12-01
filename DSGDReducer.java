@@ -672,7 +672,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				return true;
 			}else{
 				for(int i=0; i<d; i++){
-					String logfile = reducer.outputPath + "/Plog/" + c + index + "." + iter;
+					String logfile = reducer.outputPath + "/Plog/" + c + i + "." + iter;
 					System.out.println("Thread: Check log: " + c + index + ", " + iter + ": " + logfile);
 					if(!reducer.checkForFile(logfile,fs)) {
 						fs.close();
