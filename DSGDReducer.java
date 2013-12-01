@@ -222,7 +222,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 	public void writeFactor(DenseTensor T, char c, int index, int iter, int minI, final Reporter reporter) throws IOException {
 
 		long startTime = System.currentTimeMillis();
-		timeTracker += "Time Waiting Sync Write Begin: " + startTime + "\n";
+		timeTracker += "Time Waiting Sync Write Begin: " + System.currentTimeMillis() + "\n";
 		//System.out.println("WRITE FACTOR: " + c + index + ", " + iter);
 		FileSystem fs = FileSystem.get(thisjob);
 		float[] rankSum = new float[T.M];
@@ -945,7 +945,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				curSubepoch = updateThroughTheSubepochs(curSubepoch, subepoch, bi, Ublock, queue, reporter);
 
 				if (dataSubepoch == curSubepoch) {
-					timeTracker += "Start first pass of block: " + System.currentTimeMillis() + "\n";
+					timeTracker += "First pass of block Begin: " + System.currentTimeMillis() + "\n";
 				}
 			}
 
@@ -1002,11 +1002,13 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 //			reporter.incrCounter("Subepochs", "U" , 1);
 		}
 
+		timeTracker += "End first pass of block: " + System.currentTimeMillis() + "\n";
+
 		//System.out.println("Last batch: " + numSoFar);
 		System.out.println("Total datapoints: " + numSoFar);
 
 
-		timeTracker += "Begin final write of data: " + System.currentTimeMillis() + "\n";
+		timeTracker += "Final Write of Data Begin: " + System.currentTimeMillis() + "\n";
 		while(curSubepoch!=d-1){			// now update until the last block
 			// NOTE passing Ublock here.
 			curSubepoch = updateThroughTheSubepochs(curSubepoch, curSubepoch+1, Ublock, Ublock, queue, reporter);
@@ -1029,7 +1031,7 @@ public class DSGDReducer extends MapReduceBase implements Reducer<IntArray, Floa
 				writeFactor(W[set],wc,tk,curSubepoch,dP[set]*tk,reporter);
 			}
 		}
-		timeTracker += "End final write of data: " + System.currentTimeMillis() + "\n";
+		timeTracker += "Final Write of Data End: " + System.currentTimeMillis() + "\n";
 
 		timeTracker += "DONE: " +  System.currentTimeMillis() + "\n";
 
